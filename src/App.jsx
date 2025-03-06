@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import mockProfiles from './mockData';
 import { Home, Search, MessageCircle, UserCircle, Heart, X } from 'lucide-react';
 import Login from './components/Login';
+import nlp from "compromise";
 
 function App() {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -23,45 +24,62 @@ function App() {
     localStorage.removeItem('userPreferences');
   };
 
-  const calculateCompatibility = (profile) => {
+
+  const encodeLifestyle = (lifestyle) => ({
+    sleepSchedule: { early: 1, flexible: 2, late: 3 }[lifestyle.sleepSchedule] || 2,
+    cleanliness: { "very neat": 3, "moderately neat": 2, relaxed: 1 }[lifestyle.cleanliness] || 2,
+    smoking: lifestyle.smoking ? 1 : 0,
+    pets: lifestyle.pets ? 1 : 0,
+  });
+  
+  const computeSimilarity = (vecA, vecB) => {
+    const dotProduct = vecA.reduce((sum, val, i) => sum + val * vecB[i], 0);
+    const magnitudeA = Math.sqrt(vecA.reduce((sum, val) => sum + val ** 2, 0));
+    const magnitudeB = Math.sqrt(vecB.reduce((sum, val) => sum + val ** 2, 0));
+    return magnitudeA && magnitudeB ? dotProduct / (magnitudeA * magnitudeB) : 0;
+  };
+  
+  const tokenizeInterests = (interests) => {
+    if (!Array.isArray(interests)) return [];
+    return interests.map((interest) => nlp(interest.toLowerCase()).terms().out("array"));
+  };
+  
+  
+const aiCompatibility = (profile, userPreferences) => {
     if (!userPreferences) return { profile, compatibility: 0, matchReasons: [] };
   
     let compatibilityScore = 0;
     const reasons = [];
   
-    if (profile.budget && userPreferences.budget) {
-      const budgetDiff = Math.abs(profile.budget - userPreferences.budget);
-      if (budgetDiff <= userPreferences.budget * 0.2) {
-        compatibilityScore += 25;
-        reasons.push('Budget aligned within 20% range');
-      }
-    }
+    const profileInterests = Array.isArray(profile.interests) ? profile.interests : [];
+    const userInterests = Array.isArray(userPreferences.interests) ? userPreferences.interests : [];
   
-    const lifestyleKeys = ['sleepSchedule', 'cleanliness', 'smoking', 'pets'];
-    lifestyleKeys.forEach((key) => {
-      if (profile.lifestyle?.[key] === userPreferences.lifestyle?.[key]) {
-        compatibilityScore += { sleepSchedule: 20, cleanliness: 20, smoking: 15, pets: 10 }[key];
-        reasons.push(`Matching ${key} preferences`);
-      }
-    });
+    // Budget Score (20%)
+    const budgetDiff = Math.abs(profile.budget - userPreferences.budget) / userPreferences.budget;
+    const budgetScore = 1 - Math.min(budgetDiff, 1);
+    compatibilityScore += budgetScore * 20;
+    if (budgetScore > 0.8) reasons.push("Budget well-aligned");
   
-    if (Array.isArray(profile.interests) && Array.isArray(userPreferences.interests)) {
-      const sharedInterests = profile.interests.filter((interest) =>
-        userPreferences.interests.includes(interest)
-      );
-      if (sharedInterests.length > 0) {
-        compatibilityScore += Math.min(sharedInterests.length * 5, 10);
-        reasons.push(`${sharedInterests.length} shared interests`);
-      }
-    }
+    // Lifestyle Score (50%)
+    const profileVec = Object.values(encodeLifestyle(profile.lifestyle));
+    const userVec = Object.values(encodeLifestyle(userPreferences.lifestyle));
+    const lifestyleScore = computeSimilarity(profileVec, userVec);
+    compatibilityScore += lifestyleScore * 50;
+    if (lifestyleScore > 0.6) reasons.push("Strong lifestyle match");
   
-    return { profile, compatibility: compatibilityScore, matchReasons: reasons };
+    // Interest Similarity (30%)
+    const interestsVec = tokenizeInterests(profileInterests);
+    const userInterestsVec = tokenizeInterests(userInterests);
+    const sharedInterests = interestsVec.flat().filter((word) => userInterestsVec.flat().includes(word)).length;
+    const interestScore = sharedInterests / Math.max(profileInterests.length, 1);
+    compatibilityScore += interestScore * 30;
+    if (sharedInterests > 0) reasons.push(`${sharedInterests} shared interests`);
+
+    return { profile, compatibility: Math.round(compatibilityScore), matchReasons: reasons };
   };
   
-
-  const sortedProfiles = mockProfiles
-    .map(({ profile }) => calculateCompatibility(profile))
-    .sort((a, b) => b.compatibility - a.compatibility);
+  
+  const sortedProfiles = mockProfiles.map((p) => aiCompatibility(p.profile, userPreferences)).sort((a, b) => b.compatibility - a.compatibility);
 
   const currentMatch = sortedProfiles[currentIndex];
 
@@ -84,7 +102,7 @@ function App() {
   };
 
   if (!userPreferences?.isLoggedIn) {
-    return <Login setUserPreferences={setUserPreferences} />;
+    return <Login setUserPreferences={setUserPreferences}/>;
   }
 
   if (!currentMatch || currentIndex >= sortedProfiles.length) {

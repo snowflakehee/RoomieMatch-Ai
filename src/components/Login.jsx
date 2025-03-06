@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import mockProfiles from '../mockData'; // Import roommate profiles
 
 const Login = ({ setUserPreferences }) => {
   const [step, setStep] = useState(1);
@@ -39,39 +38,70 @@ const Login = ({ setUserPreferences }) => {
     }
   };
 
-  const calculateCompatibility = () => {
-    let bestScore = 0;
-    let bestProfile = null;
+  
 
-    mockProfiles.forEach((profile) => {
-      let score = 0;
-
-      if (userDetails.budget >= profile.profile.budget) score += 30;
-      if (userDetails.lifestyle.sleepSchedule === profile.profile.lifestyle.sleepSchedule) score += 20;
-      if (userDetails.lifestyle.cleanliness === profile.profile.lifestyle.cleanliness) score += 20;
-      if (userDetails.lifestyle.smoking === profile.profile.lifestyle.smoking) score += 15;
-      if (userDetails.lifestyle.pets === profile.profile.lifestyle.pets) score += 15;
-
-      const commonInterests = userDetails.interests
-        .split(',')
-        .map((i) => i.trim())
-        .filter((i) => profile.profile.interests.includes(i));
-      score += commonInterests.length * 10;
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestProfile = profile;
-      }
-    });
-
-    setBestMatch(bestProfile);
+  const encodeLifestyle = (lifestyle) => ({
+    sleepSchedule: { early: 1, flexible: 2, late: 3 }[lifestyle.sleepSchedule] || 2,
+    cleanliness: { "very neat": 3, "moderately neat": 2, relaxed: 1 }[lifestyle.cleanliness] || 2,
+    smoking: lifestyle.smoking ? 1 : 0,
+    pets: lifestyle.pets ? 1 : 0,
+  });
+  
+  const computeSimilarity = (vecA, vecB) => {
+    const dotProduct = vecA.reduce((sum, val, i) => sum + val * vecB[i], 0);
+    const magnitudeA = Math.sqrt(vecA.reduce((sum, val) => sum + val ** 2, 0));
+    const magnitudeB = Math.sqrt(vecB.reduce((sum, val) => sum + val ** 2, 0));
+    return magnitudeA && magnitudeB ? dotProduct / (magnitudeA * magnitudeB) : 0;
   };
+  
+  const tokenizeInterests = (interests) => {
+    if (!Array.isArray(interests)) return [];
+    return interests.map((interest) => nlp(interest.toLowerCase()).terms().out("array"));
+  };
+  
+  
+const aiCompatibility = (profile, userPreferences) => {
+    if (!userPreferences) return { profile, compatibility: 0, matchReasons: [] };
+  
+    let compatibilityScore = 0;
+    const reasons = [];
+  
+    const profileInterests = Array.isArray(profile.interests) ? profile.interests : [];
+    const userInterests = Array.isArray(userPreferences.interests) ? userPreferences.interests : [];
+  
+    // Budget Score (20%)
+    const budgetDiff = Math.abs(profile.budget - userPreferences.budget) / userPreferences.budget;
+    const budgetScore = 1 - Math.min(budgetDiff, 1);
+    compatibilityScore += budgetScore * 20;
+    if (budgetScore > 0.8) reasons.push("Budget well-aligned");
+  
+    // Lifestyle Score (50%)
+    const profileVec = Object.values(encodeLifestyle(profile.lifestyle));
+    const userVec = Object.values(encodeLifestyle(userPreferences.lifestyle));
+    const lifestyleScore = computeSimilarity(profileVec, userVec);
+    compatibilityScore += lifestyleScore * 50;
+    if (lifestyleScore > 0.6) reasons.push("Strong lifestyle match");
+  
+    // Interest Similarity (30%)
+    const interestsVec = tokenizeInterests(profileInterests);
+    const userInterestsVec = tokenizeInterests(userInterests);
+    const sharedInterests = interestsVec.flat().filter((word) => userInterestsVec.flat().includes(word)).length;
+    const interestScore = sharedInterests / Math.max(profileInterests.length, 1);
+    compatibilityScore += interestScore * 30;
+    if (sharedInterests > 0) reasons.push(`${sharedInterests} shared interests`);
+
+    return { profile, compatibility: Math.round(compatibilityScore), matchReasons: reasons };
+  };
+
 
   const handleSubmit = () => {
-    setUserPreferences({ ...userDetails, isLoggedIn: true });
-    calculateCompatibility();
+    const formattedInterests = userDetails.interests.split(',').map(interest => interest.trim());
+    setUserPreferences({ ...userDetails, interests: formattedInterests, isLoggedIn: true });
+    const bestMatch = aiCompatibility({ ...userDetails, interests: formattedInterests });
+    setBestMatch(bestMatch);
   };
-
+  
+  
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
