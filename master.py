@@ -35,7 +35,6 @@ def compute_compatibility(data: CompatibilityRequest):
         candidate_text = f"Budget: {candidate.budget}, Lifestyle: {candidate.lifestyle}, Interests: {', '.join(candidate.interests)}"
         candidate_embedding = model.encode(candidate_text, convert_to_tensor=True)
 
-        # Compute similarity using built-in function
         similarity_score = util.pytorch_cos_sim(user_embedding, candidate_embedding).item()
         match_reasons = []
 
