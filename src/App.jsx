@@ -53,6 +53,7 @@ const fetchCompatibility = async (userProfile, candidates) => {
             occupation: profile.profile.occupation || "Unknown",
             imageUrl: profile.profile.imageUrl || "/default.jpg",
             bio: profile.profile.bio || "No bio available.",
+            budget: profile.profile.budget || "N/A", 
           },
           compatibility: match ? match.compatibility : 0,
           matchReasons: match ? match.matchReasons : [],
@@ -159,23 +160,17 @@ const handleLogout = () => {
                     className="w-full h-full object-cover"
                   />
                   <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-6">
-                    <div className="flex justify-between items-end">
-                      <div>
-                        <h2 className="text-2xl font-bold text-white">
-                          {currentMatch.profile.name || "Unknown"},{" "}
-                          {currentMatch.profile.age || "N/A"}
-                        </h2>
-                        <p className="text-white/90">
-                          {currentMatch.profile.occupation ||
-                            "No Occupation Info"}
-                        </p>
-                      </div>
-                      <div className="bg-green-500 rounded-full px-3 py-1">
-                        <span className="text-white font-semibold">
-                          {currentMatch.compatibility || 0}% Match
-                        </span>
-                      </div>
+                    <div className="flex justify-between items-center">
+                      <h2 className="text-2xl font-bold text-white">
+                        {currentMatch.profile.name || "Unknown"}, {currentMatch.profile.age || "N/A"}
+                      </h2>
+                    <div className="bg-green-500 rounded-full px-3 py-1">
+                      <span className="text-white font-semibold">
+                        {currentMatch.compatibility || 0}% Match
+                      </span>
                     </div>
+                    </div>
+                    <p className="text-white/90">{currentMatch.profile.occupation || "No Occupation Info"}</p>
                   </div>
                 </div>
 
@@ -201,6 +196,15 @@ const handleLogout = () => {
                       )}
                     </ul>
                   </div>
+                 
+                  <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-800 mb-3">
+                    Budget
+                  </h3>
+                  <p className="text-sm text-gray-600">
+                    {currentMatch?.profile?.budget ? `$${currentMatch.profile.budget} per month` : "N/A"}
+                  </p>
+                </div>
 
                   <div className="flex justify-center gap-4 mt-6">
                     <button
