@@ -1,7 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sentence_transformers import SentenceTransformer, util
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+import re
+import random
 
 app = FastAPI()
 
@@ -13,7 +16,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir="D:/huggingface_cache")
+model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto", cache_dir="D:/huggingface_cache")
 
 class Profile(BaseModel):
     name: str
@@ -25,32 +30,48 @@ class CompatibilityRequest(BaseModel):
     user_profile: Profile
     candidate_profiles: list[Profile]
 
+def extract_score(response: str):
+    match = re.search(r"(\d{1,3})%", response)  # Extract percentage
+    if match:
+        score = float(match.group(1))
+    else:
+        match = re.search(r"(\d+\.\d+|\d+)", response)  # Extract any number
+        score = float(match.group(1)) if match else random.uniform(30, 80)  # Fallback range
+
+    return max(0, min(score, 100))  # Clamp between 0-100
+
 @app.post("/compute_compatibility")
 def compute_compatibility(data: CompatibilityRequest):
+    print(f"Received data: {data}")
     scores = []
     user_text = f"Budget: {data.user_profile.budget}, Lifestyle: {data.user_profile.lifestyle}, Interests: {', '.join(data.user_profile.interests)}"
-    user_embedding = model.encode(user_text, convert_to_tensor=True)
-
+    
     for candidate in data.candidate_profiles:
         candidate_text = f"Budget: {candidate.budget}, Lifestyle: {candidate.lifestyle}, Interests: {', '.join(candidate.interests)}"
-        candidate_embedding = model.encode(candidate_text, convert_to_tensor=True)
+        prompt = (f"User Profile:\n{user_text}\n\n"
+                  f"Candidate Profile:\n{candidate_text}\n\n"
+                  f"Provide ONLY a numerical compatibility score from 0 to 100. No explanation, only a number.")
 
-        similarity_score = util.pytorch_cos_sim(user_embedding, candidate_embedding).item()
-        match_reasons = []
+        inputs = tokenizer(prompt, return_tensors="pt").to("cuda" if torch.cuda.is_available() else "cpu")
+        
+        output = model.generate(
+            **inputs, 
+            max_new_tokens=5,  
+            temperature=0.8,  # Increase randomness
+            top_k=40,  
+            penalty_alpha=0.6,  # Encourage diverse outputs
+            return_dict_in_generate=True
+        )
 
-        if similarity_score > 0.7:
-            match_reasons.append("Strong compatibility based on overall profile match")
-        elif similarity_score > 0.4:
-            match_reasons.append("Moderate compatibility with some common aspects")
-        else:
-            match_reasons.append("Low compatibility due to differing aspects")
-
+        compatibility_response = tokenizer.decode(output.sequences[0], skip_special_tokens=True).strip()
+        score = extract_score(compatibility_response)
+        
         scores.append({
             "profile": candidate.name,
-            "compatibility": round(similarity_score * 100),
-            "matchReasons": match_reasons
+            "compatibility": score
         })
-
+    
+    print(scores)
     return {"all_matches": scores}
 
 if __name__ == "__main__":

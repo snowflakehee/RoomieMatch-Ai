@@ -22,52 +22,86 @@ function App() {
   const [sortedProfiles, setSortedProfiles] = useState([]);
 
   useEffect(() => {
+    console.log("Mock Profiles Data:", mockProfiles);
     if (userPreferences) {
       localStorage.setItem("userPreferences", JSON.stringify(userPreferences));
+      console.log("User Preferences:", userPreferences);
       fetchCompatibility(userPreferences, mockProfiles);
     }
   }, [userPreferences]);
 
-const fetchCompatibility = async (userProfile, candidates) => {
-  try {
-    const response = await fetch("http://127.0.0.1:8000/compute_compatibility", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        user_profile: userProfile,
-        candidate_profiles: candidates.map((p) => p.profile),
-      }),
-    });
+  useEffect(() => {
+    console.log("Sorted Profiles Updated:", sortedProfiles);
+  }, [sortedProfiles]);
+  
+  const fetchCompatibility = async (userProfile, candidates) => {
+    const formattedUserProfile = {
+      ...userProfile,
+      budget: parseInt(userProfile.budget) || 0,  
+    };
 
-    const data = await response.json();
-    console.log("API Response:", data); 
+    console.log("Formatted User Profile:", formattedUserProfile);
 
-    if (data.all_matches) {
-      const mergedProfiles = candidates.map((profile) => {
-        const match = data.all_matches.find((m) => m.profile === profile.profile.name);
+    const formattedCandidates = candidates.map((p) => ({
+      ...p.profile,
+      age: parseInt(p.profile.age) || 0,
+      budget: parseInt(p.profile.budget) || 0,
+    }));
 
-        return {
-          profile: {
-            name: profile.profile.name,
-            age: profile.profile.age || "N/A",
-            occupation: profile.profile.occupation || "Unknown",
-            imageUrl: profile.profile.imageUrl || "/default.jpg",
-            bio: profile.profile.bio || "No bio available.",
-            budget: profile.profile.budget || "N/A", 
-          },
-          compatibility: match ? match.compatibility : 0,
-          matchReasons: match ? match.matchReasons : [],
-        };
+    console.log("Formatted Candidates:", formattedCandidates);
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/compute_compatibility", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_profile: formattedUserProfile,
+          candidate_profiles: formattedCandidates,
+        }),
       });
 
-      console.log("Merged Profiles:", mergedProfiles);
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Error Data:", errorData);
+        throw new Error("Network response was not ok");
+      }
 
-      setSortedProfiles(mergedProfiles.sort((a, b) => b.compatibility - a.compatibility));
+      const data = await response.json();
+      console.log("API Response Data:", data);
+
+      if (data?.all_matches?.length) {
+        const mergedProfiles = candidates.map((profile) => {
+          console.log("Profile Data:", profile);
+          console.log("Match Data:", data.all_matches);
+
+          const match = data.all_matches.find(
+            (m) => typeof m.profile === "string" &&
+                   m.profile.trim().toLowerCase() === profile.profile.name.trim().toLowerCase()
+          );
+          console.log("Match Found:", match);
+          console.log("Profile Name:", profile.profile.name);
+          console.log("Matched Names:", data.all_matches.map(m => m.profile));
+          console.log("Raw Compatibility:", match ? match.compatibility : "No Match");
+
+          const parsedCompatibility = parseFloat(match?.compatibility);
+          console.log("Parsed Compatibility:", parsedCompatibility);
+          return {
+            profile: profile.profile,
+            compatibility: !isNaN(parsedCompatibility) ? parsedCompatibility : 0,
+            matchReasons: match ? match.matchReasons || [] : [],
+          };
+        });
+
+        setSortedProfiles(
+          mergedProfiles.sort((a, b) => b.compatibility - a.compatibility)
+        );
+      } else {
+        setSortedProfiles(mockProfiles);
+      }
+    } catch (error) {
+      console.error("Error fetching compatibility:", error);
+      setSortedProfiles(mockProfiles);
     }
-  } catch (error) {
-    console.error("Error fetching compatibility:", error);
-    setSortedProfiles(mockProfiles); 
-  }
 };
 
 const handleLogout = () => {
@@ -77,8 +111,6 @@ const handleLogout = () => {
   setMatches([]); 
   setCurrentIndex(0); 
 };
-
-
 
   const currentMatch = sortedProfiles[currentIndex];
 
@@ -93,8 +125,18 @@ const handleLogout = () => {
   };
 
   const handleNext = () => {
-    setCurrentIndex((prevIndex) => prevIndex + 1);
+    if (sortedProfiles.length === 0) {
+      console.log("Sorted profiles are empty.");
+      return;
+    }
+    
+    if (currentIndex + 1 < sortedProfiles.length) {
+      setCurrentIndex(prevIndex => prevIndex + 1);
+    } else {
+      console.log("No more profiles available.");
+    }
   };
+  
 
   if (!userPreferences?.isLoggedIn) {
     return <Login setUserPreferences={setUserPreferences} />;
@@ -155,7 +197,7 @@ const handleLogout = () => {
               <>
                 <div className="relative h-96">
                   <img
-                    src={currentMatch.profile.imageUrl || "/default.jpg"} // Fallback Image
+                    src={currentMatch.profile.imageUrl ?? "/default.jpg"} // Fallback Image
                     alt={currentMatch.profile.name || "Profile"}
                     className="w-full h-full object-cover"
                   />
@@ -166,7 +208,7 @@ const handleLogout = () => {
                       </h2>
                     <div className="bg-green-500 rounded-full px-3 py-1">
                       <span className="text-white font-semibold">
-                        {currentMatch.compatibility || 0}% Match
+                        {currentMatch.compatibility ?? "N/A"}% Match
                       </span>
                     </div>
                     </div>
