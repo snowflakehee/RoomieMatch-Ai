@@ -4,7 +4,6 @@ from pydantic import BaseModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import re
-import random
 
 app = FastAPI()
 
@@ -31,14 +30,14 @@ class CompatibilityRequest(BaseModel):
     candidate_profiles: list[Profile]
 
 def extract_score(response: str):
-    match = re.search(r"(\d{1,3})%", response)  # Extract percentage
+    match = re.search(r"(\d{1,3})%", response)  # Look for percentage first
     if match:
         score = float(match.group(1))
     else:
-        match = re.search(r"(\d+\.\d+|\d+)", response)  # Extract any number
-        score = float(match.group(1)) if match else random.uniform(30, 80)  # Fallback range
+        match = re.search(r"(\d+\.\d+|\d+)", response)  # Look for any number
+        score = float(match.group(1)) if match else 0
 
-    return max(0, min(score, 100))  # Clamp between 0-100
+    return max(0, min(score, 100))  # Ensure score is between 0 and 100
 
 @app.post("/compute_compatibility")
 def compute_compatibility(data: CompatibilityRequest):
@@ -48,22 +47,12 @@ def compute_compatibility(data: CompatibilityRequest):
     
     for candidate in data.candidate_profiles:
         candidate_text = f"Budget: {candidate.budget}, Lifestyle: {candidate.lifestyle}, Interests: {', '.join(candidate.interests)}"
-        prompt = (f"User Profile:\n{user_text}\n\n"
-                  f"Candidate Profile:\n{candidate_text}\n\n"
-                  f"Provide ONLY a numerical compatibility score from 0 to 100. No explanation, only a number.")
+        prompt = f"Compare user: {user_text} with candidate: {candidate_text}. Provide only a numerical compatibility score (0-100)."
 
         inputs = tokenizer(prompt, return_tensors="pt").to("cuda" if torch.cuda.is_available() else "cpu")
+        output = model.generate(**inputs, max_new_tokens=10)
+        compatibility_response = tokenizer.decode(output[0], skip_special_tokens=True)
         
-        output = model.generate(
-            **inputs, 
-            max_new_tokens=5,  
-            temperature=0.8,  # Increase randomness
-            top_k=40,  
-            penalty_alpha=0.6,  # Encourage diverse outputs
-            return_dict_in_generate=True
-        )
-
-        compatibility_response = tokenizer.decode(output.sequences[0], skip_special_tokens=True).strip()
         score = extract_score(compatibility_response)
         
         scores.append({
