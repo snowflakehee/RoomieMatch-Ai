@@ -30,14 +30,14 @@ class CompatibilityRequest(BaseModel):
     candidate_profiles: list[Profile]
 
 def extract_score(response: str):
-    match = re.search(r"(\d{1,3})%", response)  # Look for percentage first
+    match = re.search(r"(\d{1,3})%", response) 
     if match:
         score = float(match.group(1))
     else:
-        match = re.search(r"(\d+\.\d+|\d+)", response)  # Look for any number
+        match = re.search(r"(\d+\.\d+|\d+)", response)  
         score = float(match.group(1)) if match else 0
 
-    return max(0, min(score, 100))  # Ensure score is between 0 and 100
+    return max(0, min(score, 100))  
 
 @app.post("/compute_compatibility")
 def compute_compatibility(data: CompatibilityRequest):
