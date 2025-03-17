@@ -15,7 +15,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+
+#model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
 tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir="D:/huggingface_cache")
 model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto", cache_dir="D:/huggingface_cache")
 
@@ -50,7 +52,7 @@ def compute_compatibility(data: CompatibilityRequest):
         prompt = f"Compare user: {user_text} with candidate: {candidate_text}. Provide only a numerical compatibility score (0-100)."
 
         inputs = tokenizer(prompt, return_tensors="pt").to("cuda" if torch.cuda.is_available() else "cpu")
-        output = model.generate(**inputs, max_new_tokens=10)
+        output = model.generate(**inputs, max_new_tokens=5)
         compatibility_response = tokenizer.decode(output[0], skip_special_tokens=True)
         
         score = extract_score(compatibility_response)
@@ -66,3 +68,4 @@ def compute_compatibility(data: CompatibilityRequest):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("master:app", host="127.0.0.1", port=8000, reload=True)
+
